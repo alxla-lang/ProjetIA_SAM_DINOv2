@@ -1,6 +1,3 @@
-# ============================================================
-# IMPORTS + CONFIG
-# ============================================================
 import os, gc, glob, random, warnings, time, csv, subprocess, pickle
 from collections import defaultdict, Counter
 import numpy as np
@@ -36,10 +33,12 @@ if DEVICE.type == 'cuda':
 MIN_AREA = 500
 VOID     = -1
 
+# Libère la mémoire GPU et vide le cache.
 def cleanup():
     gc.collect()
     if torch.cuda.is_available(): torch.cuda.empty_cache()
 
+# Retourne l'état de la mémoire vidéo allouée.
 def vram_info():
     if torch.cuda.is_available():
         a = torch.cuda.memory_allocated() / 1e9
@@ -49,9 +48,6 @@ def vram_info():
 
 print(f"Device: {DEVICE}")
 
-# ============================================================
-# CLASSES COCO (80) + CAMVID (11) + MAPPING
-# ============================================================
 COCO_CLASSES = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
     "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -67,10 +63,8 @@ COCO_CLASSES = [
     "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
     "scissors", "teddy bear", "hair drier", "toothbrush"
 ]
-NUM_COCO_CLASSES = len(COCO_CLASSES)  # 80
+NUM_COCO_CLASSES = len(COCO_CLASSES)
 
-# IDs COCO officiels (1-based dans les annotations JSON)
-# Nécessaire car COCO saute certains IDs (ex: pas de 12, 26, etc.)
 COCO_ID_TO_IDX = {
     1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 7:6, 8:7, 9:8, 10:9,
     11:10, 13:11, 14:12, 15:13, 16:14, 17:15, 18:16, 19:17, 20:18, 21:19,
@@ -86,37 +80,33 @@ CAMVID_CLASSES = ['Sky', 'Building', 'Pole', 'Road', 'Sidewalk',
                   'Tree', 'Sign', 'Fence', 'Car', 'Pedestrian', 'Bicyclist']
 NUM_CAMVID = len(CAMVID_CLASSES)
 
-# Mapping COCO (index 0-based dans COCO_CLASSES) → CamVid (0-10)
 COCO_TO_CAMVID = {
-    COCO_CLASSES.index("person"):        9,   # Pedestrian
-    COCO_CLASSES.index("bicycle"):      10,   # Bicyclist
-    COCO_CLASSES.index("car"):           8,   # Car
-    COCO_CLASSES.index("motorcycle"):    8,   # Car
-    COCO_CLASSES.index("bus"):           8,   # Car
-    COCO_CLASSES.index("train"):         8,   # Car
-    COCO_CLASSES.index("truck"):         8,   # Car
-    COCO_CLASSES.index("traffic light"): 2,   # Pole
-    COCO_CLASSES.index("fire hydrant"):  2,   # Pole
-    COCO_CLASSES.index("stop sign"):     6,   # Sign
-    COCO_CLASSES.index("parking meter"): 2,   # Pole
-    COCO_CLASSES.index("bench"):         4,   # Sidewalk
-    COCO_CLASSES.index("bird"):          5,   # Tree (végétation/nature)
-    COCO_CLASSES.index("backpack"):      9,   # Pedestrian (porté par personne)
-    COCO_CLASSES.index("umbrella"):      9,   # Pedestrian
-    COCO_CLASSES.index("handbag"):       9,   # Pedestrian
-    COCO_CLASSES.index("suitcase"):      9,   # Pedestrian
-    COCO_CLASSES.index("skateboard"):   10,   # Bicyclist
-    COCO_CLASSES.index("boat"):          8,   # Car (véhicule)
-    COCO_CLASSES.index("airplane"):      8,   # Car (véhicule)
-    COCO_CLASSES.index("potted plant"):  5,   # Tree
+    COCO_CLASSES.index("person"):        9,
+    COCO_CLASSES.index("bicycle"):      10,
+    COCO_CLASSES.index("car"):           8,
+    COCO_CLASSES.index("motorcycle"):    8,
+    COCO_CLASSES.index("bus"):           8,
+    COCO_CLASSES.index("train"):         8,
+    COCO_CLASSES.index("truck"):         8,
+    COCO_CLASSES.index("traffic light"): 2,
+    COCO_CLASSES.index("fire hydrant"):  2,
+    COCO_CLASSES.index("stop sign"):     6,
+    COCO_CLASSES.index("parking meter"): 2,
+    COCO_CLASSES.index("bench"):         4,
+    COCO_CLASSES.index("bird"):          5,
+    COCO_CLASSES.index("backpack"):      9,
+    COCO_CLASSES.index("umbrella"):      9,
+    COCO_CLASSES.index("handbag"):       9,
+    COCO_CLASSES.index("suitcase"):      9,
+    COCO_CLASSES.index("skateboard"):   10,
+    COCO_CLASSES.index("boat"):          8,
+    COCO_CLASSES.index("airplane"):      8,
+    COCO_CLASSES.index("potted plant"):  5,
 }
 
 print(f"COCO_TO_CAMVID : {len(COCO_TO_CAMVID)} entrées")
 print(f"Configuration : {NUM_COCO_CLASSES} classes COCO | {NUM_CAMVID} classes CamVid évaluation")
 
-# ============================================================
-# CHARGEMENT CAMVID
-# ============================================================
 if not os.path.exists('CamVid'):
     subprocess.run(["git", "clone", "https://github.com/lih627/CamVid.git"])
 CAMVID = 'CamVid'
@@ -160,6 +150,7 @@ else:
     print(f"COLOR_MAP fallback : {len(COLOR_MAP)} couleurs")
 print(f"COLOR_MAP contient {len(COLOR_MAP)} entrées")
 
+# Convertit une image de masque en matrice de classes.
 def label_to_classmap(label_path):
     img = cv2.imread(label_path)
     if img is None: return None
@@ -171,7 +162,6 @@ def label_to_classmap(label_path):
         cmap[mask] = cls
     return cmap
 
-# Split CamVid — rng isolé pour reproductibilité
 img_d    = os.path.join(CAMVID, 'CamVid_RGB')
 lbl_d    = os.path.join(CAMVID, 'CamVid_Label')
 all_pairs = []
@@ -191,20 +181,6 @@ val_pairs   = all_pairs[int(0.7  * n):int(0.85 * n)]
 test_pairs  = all_pairs[int(0.85 * n):]
 print(f"CamVid — Train:{len(train_pairs)} Val:{len(val_pairs)} Test:{len(test_pairs)}")
 
-# ============================================================
-# TELECHARGEMENT COCO 2017
-# Via pycocotools — pas d'inscription requise
-# pip install pycocotools
-# ============================================================
-import json
-import urllib.request
-import zipfile
-
-COCO_DIR = "coco2017"
-# ============================================================
-# TELECHARGEMENT COCO 2017 — VERSION LEGERE
-# Stratégie : annotations complètes + images à la demande
-# ============================================================
 import json, urllib.request, zipfile
 
 COCO_DIR     = "coco2017"
@@ -214,7 +190,6 @@ MAX_IMAGES   = 4000
 os.makedirs(COCO_IMG_DIR,                          exist_ok=True)
 os.makedirs(os.path.join(COCO_DIR, "annotations"), exist_ok=True)
 
-# ── Étape 1 : Annotations uniquement (~241MB) ──
 ann_json = os.path.join(COCO_DIR, "annotations", "instances_train2017.json")
 if not os.path.exists(ann_json):
     ann_zip = os.path.join(COCO_DIR, "annotations_trainval2017.zip")
@@ -228,7 +203,6 @@ if not os.path.exists(ann_json):
 else:
     print("Annotations COCO déjà présentes.")
 
-# ── Étape 2 : Chargement annotations ──
 print("Chargement annotations COCO...")
 with open(ann_json) as f:
     coco_ann = json.load(f)
@@ -241,28 +215,13 @@ for ann in coco_ann['annotations']:
     if ann.get('segmentation') and ann['area'] > 400:
         coco_anns_by_img[ann['image_id']].append(ann)
 
-# ── Étape 3 : Sélection des images les plus utiles ──
-# Priorité aux images avec beaucoup d'objets urbains mappables vers CamVid
-URBAN_IDS = {COCO_ID_TO_IDX[c] for c in [
-    1,   # person
-    2,   # bicycle
-    3,   # car
-    4,   # motorcycle
-    6,   # bus
-    7,   # train
-    8,   # truck
-    10,  # traffic light
-    11,  # fire hydrant
-    13,  # stop sign
-    14,  # parking meter
-]}
+URBAN_IDS = {COCO_ID_TO_IDX[c] for c in [1, 2, 3, 4, 6, 7, 8, 10, 11, 13, 14]}
 
+# Calcule le nombre d'annotations urbaines d'une image.
 def urban_score(img_id):
-    """Nombre d'annotations urbaines dans l'image."""
     return sum(1 for a in coco_anns_by_img[img_id]
                if a['category_id'] in URBAN_IDS)
 
-# Trier par score urbain décroissant → garder les MAX_IMAGES meilleures
 all_valid_ids = [img_id for img_id, anns in coco_anns_by_img.items()
                  if any(a['category_id'] in COCO_ID_TO_IDX for a in anns)]
 
@@ -273,9 +232,8 @@ urban_counts = [urban_score(i) for i in selected_ids]
 print(f"Images sélectionnées : {len(selected_ids)} "
       f"(score urbain moyen : {np.mean(urban_counts):.1f} objets/image)")
 
-# ── Étape 4 : Téléchargement à la demande des images sélectionnées ──
+# Télécharge une image si elle n'existe pas.
 def download_image(img_id):
-    """Télécharge une image COCO si elle n'existe pas déjà."""
     fname    = coco_id_to_file[img_id]
     out_path = os.path.join(COCO_IMG_DIR, fname)
     if os.path.exists(out_path):
@@ -305,45 +263,17 @@ if to_download:
 coco_image_ids = selected_ids
 print(f"COCO prêt — {len(coco_image_ids)} images avec annotations valides")
 
-
-# Chargement des annotations COCO
-# print("Chargement annotations COCO...")
-# with open(os.path.join(COCO_DIR, "annotations", "instances_train2017.json")) as f:
-#     coco_ann = json.load(f)
-
-# # Index : image_id → file_name
-# coco_id_to_file = {img['id']: img['file_name'] for img in coco_ann['images']}
-
-# # Index : image_id → liste d'annotations
-# coco_anns_by_img = defaultdict(list)
-# for ann in coco_ann['annotations']:
-#     if ann.get('segmentation') and ann['area'] > 400:
-#         coco_anns_by_img[ann['image_id']].append(ann)
-
-# # Garder uniquement les images qui ont au moins une annotation utile
-# coco_image_ids = [img_id for img_id, anns in coco_anns_by_img.items()
-#                   if any(a['category_id'] in COCO_ID_TO_IDX for a in anns)]
-# print(f"COCO — {len(coco_image_ids)} images avec annotations valides")
-
-# ============================================================
-# VISUALISATION — EXEMPLES ALEATOIRES COCO
-# ============================================================
 print("\nVisualisation d'exemples COCO...")
 
-# Palette de couleurs pour les 80 classes COCO
 np.random.seed(SEED)
 COCO_PALETTE = np.random.randint(50, 230, size=(NUM_COCO_CLASSES, 3), dtype=np.uint8)
 
+# Dessine les masques de segmentation sur l'image.
 def draw_coco_segmentation(image_rgb, anns, img_h, img_w):
-    """
-    Dessine les masques de segmentation COCO sur l'image.
-    Retourne l'image annotée.
-    """
     overlay = image_rgb.copy().astype(np.float32)
     seg_map = np.zeros((img_h, img_w, 3), dtype=np.float32)
     has_mask = False
 
-    # Trier par aire décroissante (grands masques en premier)
     anns_sorted = sorted(anns, key=lambda a: a['area'], reverse=True)
 
     for ann in anns_sorted:
@@ -357,12 +287,10 @@ def draw_coco_segmentation(image_rgb, anns, img_h, img_w):
         mask = np.zeros((img_h, img_w), dtype=np.uint8)
 
         if isinstance(seg, list):
-            # Polygones
             for poly in seg:
                 pts = np.array(poly, dtype=np.int32).reshape(-1, 2)
                 cv2.fillPoly(mask, [pts], 1)
         elif isinstance(seg, dict):
-            # RLE (run-length encoding)
             try:
                 from pycocotools import mask as maskUtils
                 mask = maskUtils.decode(seg)
@@ -378,15 +306,13 @@ def draw_coco_segmentation(image_rgb, anns, img_h, img_w):
     if not has_mask:
         return image_rgb, np.zeros_like(image_rgb)
 
-    # Blend : image originale + masques semi-transparents
     alpha   = 0.5
     blended = (overlay * (1 - alpha) + seg_map * alpha).clip(0, 255).astype(np.uint8)
     seg_only = seg_map.astype(np.uint8)
     return blended, seg_only
 
-
+# Ajoute la légende des classes sur le graphique.
 def add_legend(ax, anns):
-    """Ajoute une légende avec les classes présentes sur l'image."""
     seen = {}
     for ann in anns:
         cat_id = ann['category_id']
@@ -407,10 +333,8 @@ def add_legend(ax, anns):
         ax.legend(handles=patches, loc='upper right', fontsize=6,
                   framealpha=0.8, ncol=max(1, len(patches) // 6))
 
-
-# Sélection d'images aléatoires avec au moins 2 annotations mappables vers CamVid
 rng_visu = random.Random(SEED + 50)
-N_VISU   = 3   # ← nombre d'images à afficher
+N_VISU   = 3   
 
 urban_ids = [
     img_id for img_id in coco_image_ids
@@ -428,34 +352,28 @@ for row, img_id in enumerate(sample_visu):
     fname     = coco_id_to_file[img_id]
     img_path  = os.path.join(COCO_IMG_DIR, fname)
     image     = cv2.imread(img_path)
-    # --- AJOUTE CES DEUX LIGNES ---
     if image is None:
         print(f"Attention: l'image {fname} est introuvable. On passe à la suivante.")
         continue
-    # ------------------------------
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     h_img, w_img = image_rgb.shape[:2]
     anns      = coco_anns_by_img[img_id]
 
     blended, seg_only = draw_coco_segmentation(image_rgb, anns, h_img, w_img)
 
-    # Colonne 0 — Image RGB originale
     axes[row, 0].imshow(image_rgb)
     axes[row, 0].set_title(f'RGB — {fname}', fontsize=8)
     axes[row, 0].axis('off')
 
-    # Colonne 1 — Image + masques superposés
     axes[row, 1].imshow(blended)
     axes[row, 1].set_title('Segmentation (blend α=0.5)', fontsize=8)
     axes[row, 1].axis('off')
     add_legend(axes[row, 1], anns)
 
-    # Colonne 2 — Masques seuls + classes mappées CamVid en surimpression
     axes[row, 2].imshow(seg_only)
     axes[row, 2].set_title('Masques + mapping CamVid', fontsize=8)
     axes[row, 2].axis('off')
 
-    # Boîtes englobantes avec nom de classe CamVid mappée
     for ann in anns:
         cat_id = ann['category_id']
         if cat_id not in COCO_ID_TO_IDX: continue
@@ -479,27 +397,27 @@ print("Graphique sauvegardé : fig_coco_exemples.png")
 
 COCO_IMG_DIR = os.path.join(COCO_DIR, "images", "train2017")
 
-# SAM
 SAM_CKPT = 'sam_vit_h_4b8939.pth'
 if not os.path.exists(SAM_CKPT):
     subprocess.run(["wget", "-q",
         "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth"])
 
-# ============================================================
-# MLP GRANULARITE + SAM
-# ============================================================
 class ImageFeatureExtractor(nn.Module):
+    # Initialise l'extracteur de caractéristiques ResNet18.
     def __init__(self):
         super().__init__()
         resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         self.backbone = nn.Sequential(*list(resnet.children())[:-1])
         for p in self.parameters(): p.requires_grad = False
         self.eval()
+        
+    # Extrait les caractéristiques de l'image en entrée.
     def forward(self, x):
         with torch.no_grad():
             return self.backbone(x).squeeze(-1).squeeze(-1)
 
 class GranularityMLP(nn.Module):
+    # Initialise le réseau MLP.
     def __init__(self, in_dim=512, hidden=256):
         super().__init__()
         self.net = nn.Sequential(
@@ -507,6 +425,8 @@ class GranularityMLP(nn.Module):
             nn.Linear(hidden, hidden // 2), nn.ReLU(), nn.Dropout(0.1),
             nn.Linear(hidden // 2, 3),
         )
+        
+    # Prédit les paramètres de segmentation.
     def forward(self, features):
         raw  = self.net(features)
         pps  = torch.sigmoid(raw[:, 0]) * 28.0 + 4.0
@@ -526,6 +446,7 @@ sam.to(DEVICE).eval()
 for p in sam.parameters(): p.requires_grad = False
 print(f"SAM chargé. {vram_info()}")
 
+# Calcule le score de granularité des masques.
 def get_granularity_score(class_map, sam_masks):
     if len(sam_masks) == 0: return float('inf')
     gt_objects = 0
@@ -556,9 +477,6 @@ mlp.load_state_dict(checkpoint['model_state_dict'])
 mlp.eval()
 print("MLP granularité chargé.")
 
-# ============================================================
-# DINOV2
-# ============================================================
 print("Chargement DINOv2 ViT-S/14...")
 dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
 dinov2.to(DEVICE).eval()
@@ -570,10 +488,6 @@ dino_transform = T.Compose([
 ])
 print(f"DINOv2 chargé. {vram_info()}")
 
-# ============================================================
-# EXTRACTION EMBEDDINGS COCO
-# Stratégie : bounding box de chaque annotation → patch → DINOv2
-# ============================================================
 COCO_EMB_CACHE = "coco_dino_embeddings.pkl"
 RECALC_COCO    = 0
 
@@ -586,7 +500,6 @@ else:
     print(f"  {len(coco_image_ids)} images à traiter...")
     all_embs, all_labels = [], []
 
-    # Limiter à 50 000 images pour la RAM/temps
     sample_ids = coco_image_ids[:50000]
 
     for img_id in tqdm(sample_ids, desc="COCO→DINOv2"):
@@ -604,7 +517,6 @@ else:
                 if cat_id not in COCO_ID_TO_IDX: continue
                 cls_idx = COCO_ID_TO_IDX[cat_id]
 
-                # Bounding box COCO : [x, y, width, height] en pixels absolus
                 x, y, bw, bh = [int(v) for v in ann['bbox']]
                 margin = 8
                 x1 = max(0, x - margin)
@@ -635,12 +547,10 @@ else:
         pickle.dump({'X_emb': X_coco, 'Y_cls': Y_coco}, f)
     print(f"  {len(X_coco)} embeddings | {len(np.unique(Y_coco))} classes | sauvegardé.")
 
-# Distribution des classes
 print("\nDistribution COCO (top 15 classes) :")
 for cls_idx, cnt in Counter(Y_coco.tolist()).most_common(15):
     print(f"  [{cls_idx:2d}] {COCO_CLASSES[cls_idx]:20s} : {cnt:6d} exemples")
 
-# Split train/test COCO
 class_counts_coco = Counter(Y_coco.tolist())
 valid_mask_coco   = np.array([class_counts_coco[y] >= 3 for y in Y_coco])
 X_coco_f, Y_coco_f = X_coco[valid_mask_coco], Y_coco[valid_mask_coco]
@@ -648,11 +558,6 @@ X_tr_coco, X_te_coco, Y_tr_coco, Y_te_coco = train_test_split(
     X_coco_f, Y_coco_f, test_size=0.15, random_state=SEED, stratify=Y_coco_f)
 print(f"\nCOCO split — Train:{len(X_tr_coco)} Test:{len(X_te_coco)}")
 
-# ============================================================
-# 3 CLASSIFIEURS ENTRAINES SUR COCO (80 classes)
-# ============================================================
-
-# ── Méthode 1 : K-Means ──
 print("\n" + "="*60)
 print(" METHODE 1 : K-Means (80 clusters, COCO)")
 print("="*60)
@@ -687,15 +592,17 @@ km_acc = accuracy_score(Y_te_coco, km_pred_te_coco)
 km_f1  = f1_score(Y_te_coco, km_pred_te_coco, average='weighted', zero_division=0)
 print(f"  Accuracy COCO : {km_acc:.4f} | F1 : {km_f1:.4f}")
 
-# ── Méthode 2 : Linear Probe (384 → 80) ──
 print("\n" + "="*60)
 print(" METHODE 2 : Linear Probe PyTorch (384→80, COCO)")
 print("="*60)
 
 class LinearProbe(nn.Module):
+    # Initialise la couche de classification linéaire.
     def __init__(self, in_dim=DINO_DIM, n_classes=NUM_COCO_CLASSES):
         super().__init__()
         self.fc = nn.Linear(in_dim, n_classes)
+        
+    # Effectue la prédiction de classe.
     def forward(self, x): return self.fc(x)
 
 probe_model     = LinearProbe().to(DEVICE)
@@ -726,9 +633,14 @@ else:
     print(f"  Train:{len(X_tr_p)} | Val:{len(X_va_p)}")
 
     class EmbDataset(Dataset):
+        # Initialise le jeu de données d'embeddings.
         def __init__(self, X, Y):
             self.X = torch.FloatTensor(X); self.Y = torch.LongTensor(Y)
+            
+        # Retourne la taille du jeu de données.
         def __len__(self): return len(self.X)
+        
+        # Récupère un élément du jeu de données.
         def __getitem__(self, i): return self.X[i], self.Y[i]
 
     tr_ld = DataLoader(EmbDataset(X_tr_p, Y_tr_p), batch_size=512, shuffle=True,  num_workers=2)
@@ -784,7 +696,6 @@ lp_acc = accuracy_score(Y_te_coco, lp_preds_te)
 lp_f1  = f1_score(Y_te_coco, lp_preds_te, average='weighted', zero_division=0)
 print(f"  Accuracy COCO : {lp_acc:.4f} | F1 : {lp_f1:.4f}")
 
-# ── Méthode 3 : Similarité Cosinus ──
 print("\n" + "="*60)
 print(" METHODE 3 : Similarité Cosinus (prototypes COCO)")
 print("="*60)
@@ -814,7 +725,6 @@ cos_acc = accuracy_score(Y_te_coco, cos_preds_te)
 cos_f1  = f1_score(Y_te_coco, cos_preds_te, average='weighted', zero_division=0)
 print(f"  Accuracy COCO : {cos_acc:.4f} | F1 : {cos_f1:.4f}")
 
-# ── Résumé ──
 print("\n" + "="*60)
 print(" COMPARAISON CLASSIFIEURS — entraînés sur COCO 80 classes")
 print("="*60)
@@ -823,10 +733,8 @@ for name, acc, f1 in [('K-Means',           km_acc,  km_f1),
                        ('Cosine Similarity', cos_acc, cos_f1)]:
     print(f"  {name:20s} : Acc={acc:.4f} | F1={f1:.4f}")
 
-# ============================================================
-# PIPELINE HALF-OPEN COCO
-# ============================================================
 class Phase1PipelineHalfOpen:
+    # Initialise le pipeline de segmentation.
     def __init__(self, sam_model, mlp_model, feat_ext, dinov2_model,
                  classifier, classifier_type):
         self.sam             = sam_model
@@ -836,6 +744,7 @@ class Phase1PipelineHalfOpen:
         self.classifier      = classifier
         self.classifier_type = classifier_type
 
+    # Prédit les hyperparamètres de SAM.
     def predict_sam_params(self, image_rgb):
         pil = Image.fromarray(image_rgb)
         t   = resnet_transform(pil).unsqueeze(0).to(DEVICE)
@@ -845,6 +754,7 @@ class Phase1PipelineHalfOpen:
                 'pred_iou_thresh':        float(np.clip(p[1], 0.70, 0.98)),
                 'stability_score_thresh': float(np.clip(p[2], 0.70, 0.98))}
 
+    # Génère les masques de segmentation avec SAM.
     def segment(self, image_rgb, params=None):
         if params is None: params = self.predict_sam_params(image_rgb)
         gen = SamAutomaticMaskGenerator(
@@ -855,6 +765,7 @@ class Phase1PipelineHalfOpen:
             min_mask_region_area=MIN_AREA)
         return [m for m in gen.generate(image_rgb) if m['area'] >= MIN_AREA]
 
+    # Extrait l'embedding de la région délimitée.
     def extract_embedding(self, image_rgb, bbox):
         x, y, w, h = [int(v) for v in bbox]
         patch = image_rgb[y:y+h, x:x+w]
@@ -863,8 +774,8 @@ class Phase1PipelineHalfOpen:
         with torch.no_grad():
             return self.dinov2(t).cpu().numpy()[0]
 
+    # Prédit la classe à partir de l'embedding.
     def classify(self, embedding):
-        """Retourne (coco_idx, confidence) — index COCO 0-based."""
         if self.classifier_type == 'linear':
             t = torch.FloatTensor(embedding).unsqueeze(0).to(DEVICE)
             with torch.no_grad():
@@ -884,6 +795,7 @@ class Phase1PipelineHalfOpen:
 
         return 0, 0.0
 
+    # Traite l'image complète via le pipeline.
     def process_image(self, image_rgb):
         masks        = self.segment(image_rgb)
         h_img, w_img = image_rgb.shape[:2]
@@ -907,9 +819,6 @@ class Phase1PipelineHalfOpen:
             })
         return results
 
-# ============================================================
-# EVALUATION mIoU — 3 CLASSIFIEURS × MAPPING COCO→CAMVID
-# ============================================================
 CLOSED_MIOU = {
     'Sky': 0.769, 'Building': 0.566, 'Pole': 0.116,
     'Road': 0.803, 'Sidewalk': 0.374, 'Tree': 0.495,
@@ -922,6 +831,7 @@ N_TEST      = min(200, len(test_pairs))
 test_subset = rng_test.sample(test_pairs, N_TEST)
 print(f"\nTest subset : {N_TEST} images CamVid (identique pour les 3 classifieurs)")
 
+# Évalue les performances du modèle avec mIoU.
 def evaluate_miou(pipeline, test_subset, method_name):
     print(f"\nÉvaluation mIoU — {method_name}...")
     class_ious = defaultdict(list)
@@ -978,11 +888,9 @@ for method_name, pipeline in pipelines.items():
     all_ious[method_name]  = ious_dict
     all_mious[method_name] = miou
 
-# ============================================================
-# GRAPHIQUE MATRICES DE CONFUSION (classes CamVid mappées)
-# ============================================================
 print("\nCalcul matrices de confusion...")
 
+# Convertit les prédictions COCO en classes CamVid.
 def coco_to_cam_array(preds):
     return np.array([COCO_TO_CAMVID.get(int(p), VOID) for p in preds])
 
@@ -993,6 +901,7 @@ km_preds_cam  = coco_to_cam_array(km_pred_te_coco[mappable_mask])
 lp_preds_cam  = coco_to_cam_array(lp_preds_te[mappable_mask])
 cos_preds_cam = coco_to_cam_array(cos_preds_te[mappable_mask])
 
+# Filtre les pixels sans étiquette valide.
 def filter_void(y_true, y_pred):
     mask = (y_true != VOID) & (y_pred != VOID)
     return y_true[mask], y_pred[mask]
@@ -1028,9 +937,6 @@ plt.savefig("fig_confusion_halfopen_coco.png", dpi=150)
 plt.close()
 print("Graphique sauvegardé : fig_confusion_halfopen_coco.png")
 
-# ============================================================
-# AFFICHAGE RESULTATS TABLEAU
-# ============================================================
 print("\n" + "="*75)
 print(" RESULTATS mIoU — HALF-OPEN COCO (80 classes) vs CLOSED (CamVid 11)")
 print("="*75)
@@ -1063,9 +969,6 @@ for name in pipelines:
     line_miou += f"  {all_mious[name]:9.4f}  {arrow}{abs(delta):.4f}"
 print(line_miou)
 
-# ============================================================
-# GRAPHIQUE COMPARATIF — 4 barres par classe
-# ============================================================
 fig, ax = plt.subplots(figsize=(16, 6))
 x      = np.arange(NUM_CAMVID)
 w_bar  = 0.18
