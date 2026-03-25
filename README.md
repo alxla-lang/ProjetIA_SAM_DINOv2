@@ -45,7 +45,7 @@ python code/download_data.py --coco     # Annotations COCO uniquement (~241MB)
 > Les images COCO (4000 images urbaines ~400MB) sont téléchargées
 > automatiquement à la demande lors de l'exécution de projet_half_open.py.
 
-## Lancement sur cluster SLURM
+## Lancement sur cluster
 ```bash
 # Vocabulaire fermé
 sbatch scripts/run_closed.sh
@@ -53,7 +53,3 @@ sbatch scripts/run_closed.sh
 # Vocabulaire semi-ouvert
 sbatch scripts/run_halfopen.sh
 ```
-
-## Fichiers cache
-
-Les fichiers `.pkl` et `.pth` sont générés automatiquement au premier lancement.
