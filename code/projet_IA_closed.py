@@ -1,6 +1,4 @@
-# ============================================================
-# INSTALLATION DES DEPENDANCES
-# ============================================================
+# Installation des modules
 
 import os, gc, glob, random, warnings, time, csv
 from collections import defaultdict, Counter
@@ -85,9 +83,7 @@ def vram_info():
 
 print(f"Configuration terminee. {NUM_CLASSES} classes semantiques.")
 
-# ============================================================
 # TELECHARGEMENT : CamVid + SAM
-# ============================================================
 import os
 import subprocess
 
@@ -209,9 +205,9 @@ if sample_cmap is not None:
         name = CLASSES[u] if u >= 0 else 'Void'
         print(f"  {name}: {c} px ({100*c/sample_cmap.size:.1f}%)")
 
-# ============================================================
+
+
 # MODELES : EXTRACTEUR DE FEATURES + MLP DE GRANULARITE
-# ============================================================
 
 class ImageFeatureExtractor(nn.Module):
     # Initialiser l'extracteur de features
@@ -259,9 +255,10 @@ n_mlp = sum(p.numel() for p in mlp.parameters() if p.requires_grad)
 print(f"Feature Extractor: {n_feat/1e6:.1f}M params (geles)")
 print(f"MLP Granularite: {n_mlp:,} params (entrainables)")
 
-# ============================================================
+
+
+
 # PRE-CALCUL DES PARAMETRES OPTIMAUX + ENTRAINEMENT MLP
-# ============================================================
 
 sam = sam_model_registry["vit_h"](checkpoint=SAM_CKPT)
 sam.to(DEVICE).eval()
@@ -320,13 +317,13 @@ valeur = 1
 
 if valeur==1:
 
-    print(f"\n[CACHE] Fichier {CACHE_FILE} trouvé ! Chargement des données...")
+    print(f"\n[CACHE] Fichier {CACHE_FILE} trouvé. Chargement des données...")
     with open(CACHE_FILE, 'rb') as f:
         training_data = pickle.load(f)
     print(f"[CACHE] {len(training_data)} exemples chargés instantanément.")
     
 else:
-    print(f"\n[CALCUL] Aucun cache trouvé. Démarrage du Grid Search (Ceci va prendre du temps)...")
+    print(f"\n[CALCUL] Aucun cache trouvé. Démarrage du Grid Search (CPrends du temps)...")
     PPS_GRID  = [8, 16, 24, 32]
     IOU_GRID  = [0.80, 0.88, 0.95]
     STAB_GRID = [0.82, 0.92]
@@ -388,7 +385,7 @@ MLP_CACHE_FILE = 'mlp_checkpoint.pth'
 valeur_2= 1 
 
 if valeur_2==1:
-    print(f"\n[CACHE] Fichier {MLP_CACHE_FILE} trouvé ! Chargement du MLP...")
+    print(f"\n[CACHE] Fichier {MLP_CACHE_FILE} trouvé. Chargement du MLP...")
     checkpoint = torch.load(MLP_CACHE_FILE, map_location=DEVICE, weights_only=False)
     mlp.load_state_dict(checkpoint['model_state_dict'])
     losses_mlp = checkpoint['losses']
@@ -439,9 +436,11 @@ else:
         'losses': losses_mlp
     }, MLP_CACHE_FILE)
 
-# ============================================================
+
+
+
+
 # EVALUATION DU MLP DE GRANULARITE
-# ============================================================
 mlp.eval()
 with torch.no_grad():
     preds_mlp = mlp(X_train_mlp).cpu().numpy()
@@ -470,9 +469,11 @@ for i, (pn, pc) in enumerate(zip(param_names, colors_p)):
 plt.suptitle('Phase 1.2 - Evaluation du MLP de Granularite', fontsize=14, fontweight='bold')
 plt.tight_layout(); plt.savefig("fig1.png")
 
-# ============================================================
+
+
+
+
 # CHARGEMENT DINOv2 + PIPELINE PHASE 1
-# ============================================================
 print("Chargement DINOv2 ViT-S/14...")
 dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
 dinov2.to(DEVICE).eval()
@@ -568,9 +569,14 @@ class Phase1Pipeline:
 pipeline = Phase1Pipeline(sam, mlp, feat_extractor, dinov2)
 print("Pipeline Phase 1 initialise.")
 
-# ============================================================
+
+
+
+
+
+
+
 # CONSTRUCTION DES DONNEES + 3 CLASSIFIEURS DINOv2
-# ============================================================
 print("Extraction des embeddings DINOv2 sur CamVid...")
 
 DINO_CACHE_FILE = 'dino_embeddings_cache.pkl'
@@ -710,9 +716,13 @@ present = sorted(set(Y_te.tolist()) | set(bp.tolist()))
 tn = [CLASSES[c] for c in present if c < NUM_CLASSES]
 print(classification_report(Y_te, bp, labels=present, target_names=tn, zero_division=0))
 
-# ============================================================
+
+
+
+
+
+
 # EVALUATION mIoU — 3 CLASSIFIEURS
-# ============================================================
 print("\nÉvaluation mIoU pour les 3 classifieurs...")
 print("Evaluation mIoU sur CamVid test set...")
 N_TEST = min(200, len(test_pairs))
@@ -798,10 +808,12 @@ plt.savefig("fig_miou_3classifiers_closed_k_mean55.png", dpi=150)
 plt.close()
 print("Graphique sauvegardé : fig_miou_3classifiers_closed.png")
 
-# ============================================================
-# EVALUATION mIoU SUR LE TEST SET CamVid
-# ============================================================
 
+
+
+
+
+# EVALUATION mIoU SUR LE TEST SET CamVid
 class_ious = defaultdict(list)
 for img_path, lbl_path in tqdm(test_subset, desc="mIoU"):
     image = cv2.imread(img_path)
@@ -850,9 +862,11 @@ for b, v in zip(bars, cv):
             f'{v:.3f}', ha='center', va='bottom', fontsize=8)
 plt.xticks(rotation=45, ha='right'); plt.tight_layout(); plt.savefig("fig3.png")
 
-# ============================================================
+
+
+
+
 # VISUALISATION PHASE 1
-# ============================================================
 CLASS_COLORS = plt.cm.tab20(np.linspace(0, 1, NUM_CLASSES))
 n_vis = min(4, N_TEST)
 vis_pairs = random.sample(test_subset, n_vis)
@@ -903,3 +917,8 @@ plt.tight_layout(rect=[0, 0.04, 1, 0.97]); plt.savefig("fig4.png")
 
 print("\n=== PHASE 1 TERMINEE ===")
 print(f"mIoU: {miou:.4f} | Classifieur: {best_method}")
+
+
+
+
+
