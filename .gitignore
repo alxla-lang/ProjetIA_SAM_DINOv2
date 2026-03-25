@@ -1,0 +1,19 @@
+# Caches lourds — régénérés automatiquement
+*.pkl
+*.pth
+*.pth.tar
+
+# Données téléchargées
+CamVid/
+coco2017/
+sam_vit_h_4b8939.pth
+
+# Logs SLURM
+logs/
+*.out
+*.err
+
+# Python
+__pycache__/
+*.pyc
+.env
